@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Woeng Nakornkasem Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM (ล็อกเวอร์ชันที่เสถียรที่สุด) -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- React-is (แก้ปัญหา ForwardRef ที่ Recharts ต้องการ) -->
+    <script crossorigin src="https://unpkg.com/react-is@18.2.0/umd/react-is.production.min.js"></script>
+    
+    <!-- Babel (For JSX compilation in browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Recharts & PropTypes (ล็อกเวอร์ชันเพื่อป้องกัน CDN อัปเดตแล้วพัง) -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.1.9/umd/Recharts.js"></script>
+</head>
+<body class="bg-slate-50 font-sans antialiased text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = window.React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } = window.Recharts;
+
+        const METER_LOCATIONS = {
+          water: [
+            '65028326 (บ.ไชน่าทาวน์)',
+            '65021362 (บ.ไชน่าทาวน์ (ยกเลิก))',
+            '2005056 (นายสนอง ตู้จินดา)',
+            '65028748 (บ.ทีซีซีเวิ้งนาครเขษม)',
+            '92535087 (บ.ไชน่าทาวน์ (ชั่วคราว) ประตู6)',
+            '92535160 (บ.ไพลอน ประตู3)',
+            '92535889 (บ.นันทวัน (ชั่วคราว) ประตู4)'
+          ],
+          electric: [
+            '014523581 95903717 (GATE-2/ร้านค้า)',
+            '012967890 06005221 (OFFICE TOC 1 คูหา)',
+            '014481365 06005231 (OFFICE AWC)',
+            '014823408 06000186 (GATE-1)',
+            '014523701 95903822 (แจ้งยกเลิก)',
+            '017707773 97434746 (GATE-6)',
+            '017670742 97418348 (GATE-2)',
+            '17814851 97481602 (GATE-4)',
+            'อาคารรวมทนไทย ชั้น 12 (ออฟฟิศชั่วคราว)'
+          ],
+          internet: [
+            'Internet Charge (Woeng NakornKasem Yaowaraj)'
+          ]
+        };
+
+        const METER_COLORS = {
+          '65028326 (บ.ไชน่าทาวน์)': '#be185d',
+          '65021362 (บ.ไชน่าทาวน์ (ยกเลิก))': '#fbcfe8',
+          '2005056 (นายสนอง ตู้จินดา)': '#111827',
+          '65028748 (บ.ทีซีซีเวิ้งนาครเขษม)': '#4338ca',
+          '92535087 (บ.ไชน่าทาวน์ (ชั่วคราว) ประตู6)': '#d1d5db',
+          '92535160 (บ.ไพลอน ประตู3)': '#1d4ed8',
+          '92535889 (บ.นันทวัน (ชั่วคราว) ประตู4)': '#38bdf8',
+          '014523581 95903717 (GATE-2/ร้านค้า)': '#7f1d1d',
+          '012967890 06005221 (OFFICE TOC 1 คูหา)': '#ea580c',
+          '014481365 06005231 (OFFICE AWC)': '#dc2626',
+          '014823408 06000186 (GATE-1)': '#ca8a04',
+          '014523701 95903822 (แจ้งยกเลิก)': '#fef08a',
+          '017707773 97434746 (GATE-6)': '#581c87',
+          '017670742 97418348 (GATE-2)': '#c084fc',
+          '17814851 97481602 (GATE-4)': '#166534',
+          'อาคารรวมทนไทย ชั้น 12 (ออฟฟิศชั่วคราว)': '#4ade80',
+          'Internet Charge (Woeng NakornKasem Yaowaraj)': '#4b5563'
+        };
+
+        const AGGREGATE_COLORS = {
+          water: '#3b82f6',
+          electric: '#eab308',
+          internet: '#10b981'
+        };
+
+        const YEARS = ['2024', '2025', '2026', '2027', '2028', '2029', '2030'];
+        const MONTHS = [
+          { v: '01', l: 'January' }, { v: '02', l: 'February' }, { v: '03', l: 'March' },
+          { v: '04', l: 'April' }, { v: '05', l: 'May' }, { v: '06', l: 'June' },
+          { v: '07', l: 'July' }, { v: '08', l: 'August' }, { v: '09', l: 'September' },
+          { v: '10', l: 'October' }, { v: '11', l: 'November' }, { v: '12', l: 'December' }
+        ];
+
+        const generateInitialData = () => {
+          const data = [];
+          let idCounter = 1;
+          const addData = (utility, month, amount, location = null) => {
+            if (amount > 0) {
+              data.push({ id: (idCounter++).toString(), utility, month, amount, location });
+            }
+          };
+
+          const internetRates = [
+            { m: '2025-01', a: 1484.00 }, { m: '2025-02', a: 1484.00 }, { m: '2025-03', a: 1484.00 },
+            { m: '2025-04', a: 2338.64 }, { m: '2025-05', a: 2262.20 }, { m: '2025-06', a: 2253.00 },
+            { m: '2025-07', a: 2413.83 }, { m: '2025-08', a: 2267.00 }, { m: '2025-09', a: 2267.00 },
+            { m: '2025-10', a: 2267.00 }, { m: '2025-11', a: 2267.00 }, { m: '2025-12', a: 1441.78 },
+            { m: '2026-01', a: 3557.00 }, { m: '2026-02', a: 3557.00 }, { m: '2026-03', a: 3557.00 },
+            { m: '2026-04', a: 3557.00 }, { m: '2026-05', a: 3557.00 }, { m: '2026-06', a: 3557.00 },
+            { m: '2026-07', a: 3557.00 }, { m: '2026-08', a: 3557.00 }
+          ];
+          internetRates.forEach(r => addData('internet', r.m, r.a, METER_LOCATIONS.internet[0]));
+
+          const eLoc = METER_LOCATIONS.electric;
+          const eData = [
+            { m: '2025-01', vals: [1029.94, 915.73, 13355.12, 2809.96, 33.29, 0, 0, 0, 0] },
+            { m: '2025-02', vals: [2545.60, 9424.34, 13743.02, 10318.95, 33.29, 0, 123720.34, 0, 0] },
+            { m: '2025-03', vals: [6085.57, 7403.42, 10606.29, 23871.54, 33.29, 68391.77, 183716.39, 0, 0] },
+            { m: '2025-04', vals: [11425.19, 6332.75, 8906.23, 32668.76, 33.29, 90646.52, 176388.96, 0, 0] },
+            { m: '2025-05', vals: [11761.03, 771.24, 9834.95, 43201.88, 33.29, 123887.69, 218705.62, 0, 0] },
+            { m: '2025-06', vals: [12366.11, 24.62, 9405.39, 33640.76, 33.29, 116188.02, 218698.63, 0, 0] },
+            { m: '2025-07', vals: [9285.30, 24.62, 5784.18, 28130.41, 33.29, 124650.66, 227448.26, 0, 0] },
+            { m: '2025-08', vals: [8860.36, 24.62, 5479.33, 30162.73, 33.29, 132868.31, 213350.86, 2302.90, 0] },
+            { m: '2025-09', vals: [8534.70, 24.62, 6039.20, 30669.11, 33.29, 89007.60, 225104.54, 4447.25, 0] },
+            { m: '2025-10', vals: [8461.44, 24.62, 5329.47, 29629.69, 33.29, 151547.47, 180416.31, 12374.35, 0] },
+            { m: '2025-11', vals: [7857.03, 24.62, 5196.68, 27930.92, 33.29, 224060.59, 169914.12, 35278.72, 6359.35] },
+            { m: '2025-12', vals: [540.72, 24.62, 2128.82, 5668.32, 33.29, 251968.98, 137467.99, 99210.53, 15239.52] },
+            { m: '2026-01', vals: [0, 24.62, 367.85, 0, 33.29, 197421.11, 89716.80, 117543.29, 16133.78] },
+            { m: '2026-02', vals: [0, 24.62, 394.62, 0, 33.29, 199753.22, 92883.77, 167945.60, 28929.36] },
+            { m: '2026-03', vals: [0, 24.62, 458.18, 0, 33.29, 195095.92, 86177.26, 194247.25, 41781.93] },
+            { m: '2026-04', vals: [0, 0, 0, 0, 33.29, 265555.65, 99328.08, 172575.30, 59577.88] },
+            { m: '2026-05', vals: [0, 0, 0, 0, 33.29, 365986.31, 127149.39, 145522.54, 49307.94] },
+            { m: '2026-06', vals: [0, 0, 0, 0, 33.29, 407879.58, 201115.56, 151247.60, 58915.23] },
+            { m: '2026-07', vals: [0, 0, 0, 0, 33.29, 357496.22, 170526.16, 189735.09, 57741.27] },
+            { m: '2026-08', vals: [0, 0, 0, 0, 33.29, 383628.15, 283725.06, 190696.22, 55408.22] },
+            { m: '2026-09', vals: [0, 0, 0, 0, 33.29, 347021.16, 351569.18, 207627.66, 0] }
+          ];
+          eData.forEach(monthRow => {
+            monthRow.vals.forEach((amt, idx) => addData('electric', monthRow.m, amt, eLoc[idx]));
+          });
+
+          const wLoc = METER_LOCATIONS.water;
+          const wData = [
+            { m: '2024-11', vals: [136.50, 3937.76, 467.29, 1574.25, 0, 0, 0] },
+            { m: '2024-12', vals: [179.90, 3857.96, 914.02, 2618.52, 0, 0, 0] },
+            { m: '2025-01', vals: [158.20, 130.00, 1401.87, 1141.36, 0, 0, 0] },
+            { m: '2025-02', vals: [333.80, 260.00, 1308.41, 1830.12, 67434.72, 52013.92, 0] },
+            { m: '2025-03', vals: [953.02, 0, 1925.23, 2136.32, 50229.84, 67239.76, 0] },
+            { m: '2025-04', vals: [130.45, 0, 1468.22, 1830.12, 33344.16, 48327.16, 0] },
+            { m: '2025-05', vals: [130.60, 0, 2228.97, 2649.80, 32594.04, 53865.28, 1680.55] },
+            { m: '2025-06', vals: [130.90, 0, 2322.43, 3443.00, 22443.48, 48805.96, 4392.72] },
+            { m: '2025-07', vals: [130.60, 0, 3118.69, 3458.96, 30391.56, 56642.32, 18261.96] },
+            { m: '2025-08', vals: [130.60, 0, 2719.63, 3905.84, 22251.96, 81763.36, 25220.52] },
+            { m: '2025-09', vals: [130.60, 0, 3102.80, 4336.76, 12883.44, 69059.20, 18054.48] },
+            { m: '2025-10', vals: [130.60, 0, 2927.10, 3794.12, 17064.96, 76241.20, 26417.52] },
+            { m: '2025-11', vals: [130.45, 0, 2911.21, 3921.80, 1673.50, 69474.16, 51762.00] },
+            { m: '2025-12', vals: [130.15, 0, 1495.33, 0, 1686.40, 34011.04, 69796.80] },
+            { m: '2026-01', vals: [130.00, 0, 934.58, 0, 8286.96, 27052.48, 52974.96] },
+            { m: '2026-02', vals: [130.15, 0, 457.94, 0, 12723.84, 20684.44, 20608.08] },
+            { m: '2026-03', vals: [530.67, 0, 0, 0, 17639.52, 11076.52, 25986.60] },
+            { m: '2026-04', vals: [0, 0, 0, 0, 1682.50, 3119.20, 34636.92] },
+            { m: '2026-05', vals: [0, 0, 0, 0, 2330.08, 3126.70, 54427.32] },
+            { m: '2026-06', vals: [0, 0, 0, 0, 1669.15, 3591.28, 62582.88] },
+            { m: '2026-07', vals: [0, 0, 0, 0, 4360.80, 3591.28, 64338.48] },
+            { m: '2026-08', vals: [0, 0, 0, 0, 11542.80, 3655.12, 43702.20] }
+          ];
+          wData.forEach(monthRow => {
+            monthRow.vals.forEach((amt, idx) => addData('water', monthRow.m, amt, wLoc[idx]));
+          });
+
+          return data;
+        };
+
+        const initialData = generateInitialData();
+
+        const formatCurrency = (amount) => {
+          return new Intl.NumberFormat('en-TH', { style: 'currency', currency: 'THB' }).format(amount);
+        };
+
+        const formatMonth = (monthStr) => {
+          const [year, month] = monthStr.split('-');
+          const date = new Date(year, parseInt(month) - 1);
+          return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        };
+
+        const CustomOverviewTooltip = ({ active, payload, label }) => {
+          if (active && payload && payload.length) {
+            return (
+              <div className="bg-white p-4 border border-slate-200 shadow-lg rounded-xl z-50">
+                <p className="font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2">{label}</p>
+                <div className="max-h-64 overflow-y-auto pr-2 space-y-1.5">
+                  {payload.filter(p => p.value > 0).sort((a, b) => b.value - a.value).map((entry, index) => (
+                    <div key={index} className="flex justify-between items-start text-xs min-w-[250px]">
+                      <div className="flex items-start mr-4">
+                        <div className="w-2.5 h-2.5 rounded-sm mr-2 mt-0.5 shrink-0" style={{ backgroundColor: entry.color }} />
+                        <span className="text-slate-600 line-clamp-2 leading-tight" title={entry.name}>{entry.name}</span>
+                      </div>
+                      <span className="font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(entry.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return null;
+        };
+
+        function App() {
+          const [activeTab, setActiveTab] = useState('overview');
+          const [records, setRecords] = useState(initialData);
+          
+          const [authModal, setAuthModal] = useState({ isOpen: false, pendingAction: null, actionType: '' });
+          const [password, setPassword] = useState('');
+          const [authError, setAuthError] = useState('');
+
+          const [addModalOpen, setAddModalOpen] = useState(false);
+          const [formData, setFormData] = useState({
+            utility: 'water',
+            year: '2026',
+            month: '01',
+            amounts: {}
+          });
+
+          const [selectedMeters, setSelectedMeters] = useState([]);
+          const [chartDropdownOpen, setChartDropdownOpen] = useState(false);
+          
+          const [overviewMode, setOverviewMode] = useState('totals');
+          const [overviewFilter, setOverviewFilter] = useState('all');
+
+          useEffect(() => {
+            setSelectedMeters([]);
+            setChartDropdownOpen(false);
+          }, [activeTab]);
+
+          const escapeCSV = (value) => {
+            if (value === null || value === undefined) return '0';
+            const str = value.toString();
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          };
+
+          const downloadCSV = (csvContent, filename) => {
+            const bom = '\uFEFF'; 
+            const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
+          const handleExport = () => {
+            if (activeTab === 'overview') {
+              let csv = 'Month,Total Water,Total Electric,Total Internet,Grand Total\n';
+              overviewChartData.forEach(row => {
+                const grandTotal = row.TotalWater + row.TotalElectric + row.TotalInternet;
+                csv += `${escapeCSV(row.name)},${escapeCSV(row.TotalWater)},${escapeCSV(row.TotalElectric)},${escapeCSV(row.TotalInternet)},${escapeCSV(grandTotal)}\n`;
+              });
+              downloadCSV(csv, 'Woeng_Nakornkasem_Overview_Report.csv');
+            } else {
+              const locations = METER_LOCATIONS[activeTab];
+              let headers = ['Month', ...locations, 'Total'];
+              let csv = headers.map(escapeCSV).join(',') + '\n';
+
+              const filtered = records.filter(r => r.utility === activeTab);
+              const grouped = filtered.reduce((acc, curr) => {
+                if (!acc[curr.month]) {
+                  acc[curr.month] = { name: formatMonth(curr.month), monthRaw: curr.month, Total: 0 };
+                  locations.forEach(loc => acc[curr.month][loc] = 0);
+                }
+                acc[curr.month].Total += curr.amount;
+                if (curr.location) {
+                  acc[curr.month][curr.location] += curr.amount;
+                }
+                return acc;
+              }, {});
+
+              const sortedData = Object.values(grouped).sort((a, b) => a.monthRaw.localeCompare(b.monthRaw));
+
+              sortedData.forEach(row => {
+                let rowData = [row.name];
+                locations.forEach(loc => rowData.push(row[loc]));
+                rowData.push(row.Total);
+                csv += rowData.map(escapeCSV).join(',') + '\n';
+              });
+              downloadCSV(csv, `Woeng_Nakornkasem_${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}_Report.csv`);
+            }
+          };
+
+          const overviewChartData = useMemo(() => {
+            const grouped = records.reduce((acc, curr) => {
+              if (!acc[curr.month]) {
+                acc[curr.month] = { 
+                  name: formatMonth(curr.month), 
+                  monthRaw: curr.month, 
+                  TotalWater: 0, 
+                  TotalElectric: 0, 
+                  TotalInternet: 0 
+                };
+                Object.values(METER_LOCATIONS).flat().forEach(loc => acc[curr.month][loc] = 0);
+              }
+              if (curr.location) {
+                acc[curr.month][curr.location] += curr.amount;
+                if (curr.utility === 'water') acc[curr.month].TotalWater += curr.amount;
+                if (curr.utility === 'electric') acc[curr.month].TotalElectric += curr.amount;
+                if (curr.utility === 'internet') acc[curr.month].TotalInternet += curr.amount;
+              }
+              return acc;
+            }, {});
+            return Object.values(grouped).sort((a, b) => a.monthRaw.localeCompare(b.monthRaw));
+          }, [records]);
+
+          const utilityChartData = useMemo(() => {
+            if (activeTab === 'overview') return [];
+            const filtered = records.filter(r => r.utility === activeTab);
+            const grouped = filtered.reduce((acc, curr) => {
+              if (!acc[curr.month]) {
+                acc[curr.month] = { name: formatMonth(curr.month), monthRaw: curr.month, Total: 0 };
+                METER_LOCATIONS[activeTab].forEach(loc => acc[curr.month][loc] = 0);
+              }
+              acc[curr.month].Total += curr.amount;
+              if (curr.location) {
+                acc[curr.month][curr.location] += curr.amount;
+              }
+              return acc;
+            }, {});
+            
+            let sortedData = Object.values(grouped).sort((a, b) => a.monthRaw.localeCompare(b.monthRaw));
+
+            if (activeTab !== 'overview') {
+              METER_LOCATIONS[activeTab].forEach(loc => {
+                for (let i = 0; i < sortedData.length; i++) {
+                  if (sortedData[i][loc] === 0) {
+                    let j = i;
+                    while (j < sortedData.length && sortedData[j][loc] === 0) {
+                      j++;
+                    }
+                    const zeroCount = j - i;
+                    if (zeroCount >= 2) {
+                      for (let k = i; k < j; k++) {
+                        sortedData[k][loc] = null; 
+                      }
+                    }
+                    i = j - 1; 
+                  }
+                }
+              });
+            }
+
+            return sortedData;
+          }, [records, activeTab]);
+
+          const executeSecureAction = (action, type) => {
+            setAuthModal({ isOpen: true, pendingAction: action, actionType: type });
+            setPassword('');
+            setAuthError('');
+          };
+
+          const handleAuthSubmit = (e) => {
+            e.preventDefault();
+            if (password === 'WNK4214') {
+              authModal.pendingAction();
+              setAuthModal({ isOpen: false, pendingAction: null, actionType: '' });
+            } else {
+              setAuthError('Incorrect password');
+            }
+          };
+
+          const handleDelete = (id) => {
+            executeSecureAction(() => {
+              setRecords(prev => prev.filter(r => r.id !== id));
+            }, 'delete');
+          };
+
+          const handleAddSubmit = (e) => {
+            e.preventDefault();
+            if (!formData.month || !formData.year) return;
+            
+            executeSecureAction(() => {
+              const combinedMonth = `${formData.year}-${formData.month}`;
+              let newRecords = [];
+              const timestamp = Date.now();
+
+              METER_LOCATIONS[formData.utility].forEach((loc, idx) => {
+                const amt = parseFloat(formData.amounts[loc]) || 0;
+                newRecords.push({
+                  id: `${timestamp}-${idx}`,
+                  utility: formData.utility,
+                  month: combinedMonth,
+                  amount: amt,
+                  location: loc
+                });
+              });
+
+              setRecords(prev => [...prev, ...newRecords]);
+              setAddModalOpen(false);
+              
+              setFormData({ 
+                utility: activeTab !== 'overview' ? activeTab : 'water', 
+                year: formData.year, 
+                month: formData.month, 
+                amounts: {} 
+              });
+            }, 'add');
+          };
+
+          const toggleMeterSelection = (meter) => {
+            setSelectedMeters(prev => 
+              prev.includes(meter) ? prev.filter(m => m !== meter) : [...prev, meter]
+            );
+          };
+
+          const renderNav = () => (
+            <div className="w-64 bg-slate-900 text-slate-300 min-h-screen flex flex-col fixed left-0 top-0 z-10">
+              <div className="p-6">
+                <h1 className="text-xl font-bold text-white mb-1">Woeng Nakornkasem</h1>
+                <p className="text-xs text-slate-400">Yaowaraj Project Dashboard</p>
+              </div>
+              <nav className="flex-1 px-4 space-y-2">
+                <button 
+                  onClick={() => setActiveTab('overview')}
+                  className={`flex items-center w-full px-4 py-3 rounded-lg transition-colors ${activeTab === 'overview' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800'}`}
+                >
+                  <i className="fa-solid fa-house mr-3 text-lg"></i> Project Overview
+                </button>
+                <button 
+                  onClick={() => setActiveTab('water')}
+                  className={`flex items-center w-full px-4 py-3 rounded-lg transition-colors ${activeTab === 'water' ? 'bg-blue-400 text-slate-900 font-bold shadow-md' : 'hover:bg-slate-800'}`}
+                >
+                  <i className="fa-solid fa-droplet mr-3 text-lg"></i> Water
+                </button>
+                <button 
+                  onClick={() => setActiveTab('electric')}
+                  className={`flex items-center w-full px-4 py-3 rounded-lg transition-colors ${activeTab === 'electric' ? 'bg-yellow-400 text-slate-900 font-bold shadow-md' : 'hover:bg-slate-800'}`}
+                >
+                  <i className="fa-solid fa-bolt mr-3 text-lg"></i> Electric
+                </button>
+                <button 
+                  onClick={() => setActiveTab('internet')}
+                  className={`flex items-center w-full px-4 py-3 rounded-lg transition-colors ${activeTab === 'internet' ? 'bg-emerald-400 text-slate-900 font-bold shadow-md' : 'hover:bg-slate-800'}`}
+                >
+                  <i className="fa-solid fa-wifi mr-3 text-lg"></i> Internet
+                </button>
+              </nav>
+              <div className="p-4 border-t border-slate-700">
+                <div className="flex items-center text-xs text-slate-500">
+                  <i className="fa-solid fa-file-excel mr-2 shrink-0 text-base"></i>
+                  <span className="truncate">Source: ค่าน้ำค่าไฟค่าอินเตอร์เน็ต.xlsx</span>
+                </div>
+              </div>
+            </div>
+          );
+
+          const renderOverview = () => {
+            const totalWater = records.filter(r => r.utility === 'water').reduce((sum, r) => sum + r.amount, 0);
+            const totalElectric = records.filter(r => r.utility === 'electric').reduce((sum, r) => sum + r.amount, 0);
+            const totalInternet = records.filter(r => r.utility === 'internet').reduce((sum, r) => sum + r.amount, 0);
+
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+                    <div className="p-4 bg-blue-50 rounded-xl text-blue-600"><i className="fa-solid fa-droplet text-2xl"></i></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Total Water (Accumulated)</p>
+                      <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalWater)}</h3>
+                    </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+                    <div className="p-4 bg-yellow-50 rounded-xl text-yellow-600"><i className="fa-solid fa-bolt text-2xl"></i></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Total Electric (Accumulated)</p>
+                      <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalElectric)}</h3>
+                    </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+                    <div className="p-4 bg-emerald-50 rounded-xl text-emerald-600"><i className="fa-solid fa-wifi text-2xl"></i></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Total Internet (Accumulated)</p>
+                      <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalInternet)}</h3>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 space-y-4 xl:space-y-0">
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                      <i className="fa-solid fa-chart-pie mr-2 text-slate-400"></i> Monthly Expense Summary
+                    </h3>
+                    
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button onClick={() => setOverviewFilter('all')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${overviewFilter === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-800'}`}>All Utilities</button>
+                        <button onClick={() => setOverviewFilter('water')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${overviewFilter === 'water' ? 'bg-blue-500 text-white shadow' : 'text-slate-500 hover:text-slate-800'}`}>Water</button>
+                        <button onClick={() => setOverviewFilter('electric')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${overviewFilter === 'electric' ? 'bg-yellow-500 text-white shadow' : 'text-slate-500 hover:text-slate-800'}`}>Electric</button>
+                        <button onClick={() => setOverviewFilter('internet')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${overviewFilter === 'internet' ? 'bg-emerald-500 text-white shadow' : 'text-slate-500 hover:text-slate-800'}`}>Internet</button>
+                      </div>
+                      <div className="w-px h-6 bg-slate-300 hidden xl:block"></div>
+                      <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button onClick={() => setOverviewMode('totals')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center ${overviewMode === 'totals' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-800'}`}>Aggregate View</button>
+                        <button onClick={() => setOverviewMode('details')} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center ${overviewMode === 'details' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-800'}`}>Meter Breakdown</button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="h-96 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={overviewChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                        <YAxis axisLine={false} tickLine={false} tickFormatter={(val) => `฿${val.toLocaleString()}`} />
+                        <RechartsTooltip content={<CustomOverviewTooltip />} cursor={{fill: '#f8fafc'}} />
+                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                        
+                        {overviewMode === 'totals' ? (
+                          <React.Fragment>
+                            {(overviewFilter === 'all' || overviewFilter === 'water') && <Bar dataKey="TotalWater" name="Total Water" fill={AGGREGATE_COLORS.water} radius={[4, 4, 0, 0]} />}
+                            {(overviewFilter === 'all' || overviewFilter === 'electric') && <Bar dataKey="TotalElectric" name="Total Electric" fill={AGGREGATE_COLORS.electric} radius={[4, 4, 0, 0]} />}
+                            {(overviewFilter === 'all' || overviewFilter === 'internet') && <Bar dataKey="TotalInternet" name="Total Internet" fill={AGGREGATE_COLORS.internet} radius={[4, 4, 0, 0]} />}
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            {(overviewFilter === 'all' || overviewFilter === 'water') && METER_LOCATIONS.water.map((loc) => (
+                              <Bar key={loc} dataKey={loc} name={`Water: ${loc}`} stackId="water" fill={METER_COLORS[loc]} />
+                            ))}
+                            {(overviewFilter === 'all' || overviewFilter === 'electric') && METER_LOCATIONS.electric.map((loc) => (
+                              <Bar key={loc} dataKey={loc} name={`Elec: ${loc}`} stackId="electric" fill={METER_COLORS[loc]} />
+                            ))}
+                            {(overviewFilter === 'all' || overviewFilter === 'internet') && METER_LOCATIONS.internet.map((loc) => (
+                              <Bar key={loc} dataKey={loc} name={`Net: ${loc}`} stackId="internet" fill={METER_COLORS[loc]} />
+                            ))}
+                          </React.Fragment>
+                        )}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          const renderUtilityPage = () => {
+            let title, iconClass, colorClass, bgColorClass;
+            if (activeTab === 'water') {
+              title = 'Water'; iconClass = "fa-solid fa-droplet text-blue-500 text-3xl"; colorClass = 'text-blue-600'; bgColorClass = 'bg-blue-500';
+            } else if (activeTab === 'electric') {
+              title = 'Electric'; iconClass = "fa-solid fa-bolt text-yellow-500 text-3xl"; colorClass = 'text-yellow-600'; bgColorClass = 'bg-yellow-500';
+            } else {
+              title = 'Internet'; iconClass = "fa-solid fa-wifi text-emerald-500 text-3xl"; colorClass = 'text-emerald-600'; bgColorClass = 'bg-emerald-500';
+            }
+
+            const currentRecords = records.filter(r => r.utility === activeTab).sort((a, b) => b.month.localeCompare(a.month));
+
+            return (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex items-center space-x-4">
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center w-16 h-16">
+                      <i className={iconClass}></i>
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-800">Manage {title} Data</h2>
+                      <p className="text-slate-500 text-sm">View summary, trends, and record new data</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setFormData({ 
+                        utility: activeTab, 
+                        year: new Date().getFullYear().toString(), 
+                        month: (new Date().getMonth() + 1).toString().padStart(2, '0'), 
+                        amounts: {} 
+                      });
+                      setAddModalOpen(true);
+                    }}
+                    className={`flex items-center px-4 py-2 ${bgColorClass} text-white rounded-lg hover:opacity-90 transition-opacity font-medium shadow-sm`}
+                  >
+                    <i className="fa-solid fa-plus mr-2 text-sm"></i> Add New Record
+                  </button>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-slate-800">{title} Expense Trends</h3>
+                    <div className="relative">
+                      <button 
+                        onClick={() => setChartDropdownOpen(!chartDropdownOpen)}
+                        className="flex items-center space-x-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                      >
+                        <span>Compare Meters</span>
+                        {chartDropdownOpen ? <i className="fa-solid fa-chevron-up text-xs"></i> : <i className="fa-solid fa-chevron-down text-xs"></i>}
+                      </button>
+                      
+                      {chartDropdownOpen && (
+                        <React.Fragment>
+                          <div className="fixed inset-0 z-10" onClick={() => setChartDropdownOpen(false)}></div>
+                          <div className="absolute right-0 mt-2 w-80 max-h-80 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-20 p-2">
+                            <p className="text-xs font-bold text-slate-400 px-2 pt-1 pb-2 uppercase tracking-wider border-b border-slate-100 mb-2">Select to overlay on graph</p>
+                            {METER_LOCATIONS[activeTab].map(meter => (
+                              <div 
+                                key={meter} 
+                                onClick={(e) => { e.preventDefault(); toggleMeterSelection(meter); }}
+                                className="flex items-center px-2 py-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors group"
+                              >
+                                <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 shrink-0 ${selectedMeters.includes(meter) ? 'bg-blue-600 border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                                  {selectedMeters.includes(meter) && <i className="fa-solid fa-check text-white text-[10px]"></i>}
+                                </div>
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <div className="w-3 h-3 rounded-full mr-2 shrink-0" style={{ backgroundColor: METER_COLORS[meter] }}></div>
+                                  <span className="text-sm text-slate-700 truncate" title={meter}>{meter}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </React.Fragment>
+                      )}
+                    </div>
+                  </div>
+                  <div className="h-96 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={utilityChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                        <YAxis axisLine={false} tickLine={false} tickFormatter={(val) => `฿${val.toLocaleString()}`} />
+                        <RechartsTooltip 
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          formatter={(value, name) => value === null ? ['Inactive', name] : [formatCurrency(value), name]} 
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                        
+                        <Line type="monotone" dataKey="Total" name="Total (รวมทั้งหมด)" stroke="#0f172a" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                        
+                        {selectedMeters.map((loc) => (
+                          <Line 
+                            key={loc} 
+                            type="monotone" 
+                            dataKey={loc} 
+                            name={loc} 
+                            stroke={METER_COLORS[loc]} 
+                            strokeWidth={2} 
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                            connectNulls={false}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-bold text-slate-800 border-b border-slate-200 pb-2">Raw Data by Meter Location</h3>
+                  {METER_LOCATIONS[activeTab].map((loc) => {
+                    const locRecords = currentRecords.filter(r => r.location === loc);
+                    if (locRecords.length === 0) return null;
+
+                    return (
+                      <div key={loc} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center">
+                          <div className="w-3 h-3 rounded-full mr-3 shrink-0" style={{ backgroundColor: METER_COLORS[loc] }}></div>
+                          <h4 className="font-bold text-slate-800 text-sm md:text-base">{loc}</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                              <tr className="bg-white border-b border-slate-100 text-sm text-slate-500">
+                                <th className="p-4 font-medium">Month / Year</th>
+                                <th className="p-4 font-medium text-right">Amount (THB)</th>
+                                <th className="p-4 font-medium w-24 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {locRecords.map((record) => (
+                                <tr key={record.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-4 text-slate-800 font-medium">{formatMonth(record.month)}</td>
+                                  <td className="p-4 text-slate-700 text-right font-semibold">{formatCurrency(record.amount)}</td>
+                                  <td className="p-4 text-center">
+                                    <button 
+                                      onClick={() => handleDelete(record.id)}
+                                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Delete Record"
+                                    >
+                                      <i className="fa-solid fa-trash text-sm"></i>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="flex min-h-screen">
+              {renderNav()}
+              <main className="ml-64 flex-1 p-8">
+                <header className="flex justify-between items-center mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-slate-900 capitalize">{activeTab === 'overview' ? 'Project Overview' : `${activeTab} Management`}</h1>
+                    <p className="text-slate-500 mt-1">Woeng Nakornkasem Yaowaraj Project</p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
+                      <i className="fa-solid fa-file-excel text-green-600"></i>
+                      <span>Synced from: <strong>ค่าน้ำค่าไฟค่าอินเตอร์เน็ต.xlsx</strong></span>
+                    </div>
+                    <button 
+                      onClick={handleExport}
+                      className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+                    >
+                      <i className="fa-solid fa-download"></i>
+                      <span>Export Excel</span>
+                    </button>
+                  </div>
+                </header>
+
+                {activeTab === 'overview' ? renderOverview() : renderUtilityPage()}
+              </main>
+
+              {authModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+                  <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 mb-4 mx-auto">
+                      <i className="fa-solid fa-lock text-slate-600 text-xl"></i>
+                    </div>
+                    <h3 className="text-xl font-bold text-center text-slate-800 mb-2">Authentication Required</h3>
+                    <p className="text-center text-slate-500 text-sm mb-6">Please enter password to {authModal.actionType === 'add' ? 'add new' : 'delete'} record</p>
+                    <form onSubmit={handleAuthSubmit}>
+                      <div className="mb-4">
+                        <input
+                          type="password"
+                          placeholder="Password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest"
+                          autoFocus
+                        />
+                        {authError && <p className="text-red-500 text-sm text-center mt-2 flex items-center justify-center"><i className="fa-solid fa-circle-exclamation mr-1"></i> {authError}</p>}
+                      </div>
+                      <div className="flex space-x-3">
+                        <button type="button" onClick={() => setAuthModal({ isOpen: false })} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-colors">Cancel</button>
+                        <button type="submit" className="flex-1 px-4 py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900 transition-colors">Confirm</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {addModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-40">
+                  <div className="bg-white rounded-2xl w-full max-w-md lg:max-w-xl shadow-xl overflow-hidden">
+                    <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
+                      <h3 className="font-bold flex items-center capitalize"><i className="fa-solid fa-plus mr-2"></i> Add {formData.utility} Record</h3>
+                      <button onClick={() => setAddModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><i className="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+                      <div className="flex space-x-3">
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Month</label>
+                          <select value={formData.month} onChange={e => setFormData({...formData, month: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            {MONTHS.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex-1">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Year</label>
+                        <select value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-4">
+                      <div className="space-y-4 pt-2">
+                        <div className="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg flex items-start">
+                          <i className="fa-solid fa-circle-exclamation mr-2 mt-0.5 shrink-0"></i>
+                          <p>Enter amounts for each meter. Leave blank to save as ฿0.00.</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                          {METER_LOCATIONS[formData.utility].map((loc) => (
+                            <div key={loc}>
+                              <label className="block text-sm font-medium text-slate-700 mb-1 truncate" title={loc}>{loc}</label>
+                              <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">฿</span>
+                                <input 
+                                  type="number" step="0.01" min="0"
+                                  value={formData.amounts[loc] || ''}
+                                  onChange={e => setFormData({...formData, amounts: {...formData.amounts, [loc]: e.target.value}})}
+                                  placeholder="0.00"
+                                  className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-4 border-t border-slate-100 mt-6 flex justify-end">
+                        <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">Save Records</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
